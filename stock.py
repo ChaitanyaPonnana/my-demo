@@ -1,25 +1,72 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
+import requests
+from datetime import datetime
 
-# Define your stocks
+# Alpha Vantage API configuration
+API_KEY = "YOUR_ALPHA_VANTAGE_API_KEY"
+BASE_URL = "https://www.alphavantage.co/query"
+
+# Stock symbol mapping
 stocks = {
-    "Tata Steel": "TATASTEEL.NS",
     "Tata Motors": "TATAMOTORS.NS",
+    "Tata Steel": "TATASTEEL.NS",
     "Reliance": "RELIANCE.NS",
-    "Garuda": None,  # mock or skip
-    "Vishal Mega Mart": None  # mock or skip
+    "Garuda (mock)": None,
+    "Vishal Mega Mart (mock)": None
 }
 
-st.title("📈 Custom Stock Market Dashboard")
+def fetch_stock_data(symbol):
+    params = {
+        "function": "TIME_SERIES_DAILY_ADJUSTED",
+        "symbol": symbol,
+        "outputsize": "compact",
+        "apikey": API_KEY
+    }
 
-# Select stock
-stock_name = st.selectbox("Choose a stock", list(stocks.keys()))
-ticker_symbol = stocks[stock_name]
+    response = requests.get(BASE_URL, params=params)
+    data = response.json()
 
-if ticker_symbol:
-    data = yf.download(ticker_symbol, period="6mo", interval="1d")
-    st.subheader(f"{stock_name} - Last 6 Months")
-    st.line_chart(data['Close'])
+    try:
+        timeseries = data["Time Series (Daily)"]
+        df = pd.DataFrame.from_dict(timeseries, orient="index", dtype=float)
+        df = df.rename(columns={
+            "1. open": "Open",
+            "2. high": "High",
+            "3. low": "Low",
+            "4. close": "Close",
+            "5. adjusted close": "Adj Close",
+            "6. volume": "Volume"
+        })
+        df.index = pd.to_datetime(df.index)
+        df.sort_index(inplace=True)
+        return df
+    except KeyError:
+        return None
+
+# Streamlit UI
+st.set_page_config(page_title="📊 Stock Market Dashboard")
+st.title("📈 Custom Stock Market Dashboard (Alpha Vantage)")
+
+stock_choice = st.selectbox("Select a Stock", list(stocks.keys()))
+symbol = stocks[stock_choice]
+
+if symbol:
+    data = fetch_stock_data(symbol)
+    if data is not None:
+        st.subheader(f"{stock_choice} - Daily Adjusted Close")
+        st.line_chart(data['Adj Close'])
+        st.subheader("Recent Data")
+        st.dataframe(data.tail(10))
+    else:
+        st.error("Failed to fetch data from Alpha Vantage. You may have hit the API limit.")
 else:
-    st.warning(f"{stock_name} is not available in live stock APIs.")
+    st.warning(f"{stock_choice} is not available via Alpha Vantage. Showing mock data.")
+    mock_data = pd.DataFrame({
+        "Date": pd.date_range(end=datetime.today(), periods=10),
+        "Price": [100 + i * 2 for i in range(10)]
+    })
+    mock_data.set_index("Date", inplace=True)
+    st.line_chart(mock_data["Price"])
+    st.dataframe(mock_data)
+
